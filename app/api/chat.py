@@ -5,7 +5,7 @@ import asyncio
 from app.services.llm_service import GeminiService
 from app.schemas.chat import (
     ChatStreamRequest, ChatFullRequest, 
-    TokenCountRequest, TokenCountResponse
+    TokenCountRequest, TokenCountResponse, ChatFullResponse
 )
 
 router = APIRouter()
@@ -38,19 +38,17 @@ async def chat_stream(req: ChatStreamRequest):
     return StreamingResponse(token_generator(), media_type="text/event-stream")
 
 
-@router.post("/v1/chat/full")
+@router.post("/v1/chat/full", response_model=ChatFullResponse)
 async def chat_full(req: ChatFullRequest):
     """
-    Get complete response (non-streaming).
-    
-    Use this when you need the full answer at once.
+    Get complete response (non-streaming) with token usage.
     """
     try:
         response = await gemini.chat_full(
             req.messages,
             system_prompt=req.system_prompt
         )
-        return {"content": response}
+        return response  
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
