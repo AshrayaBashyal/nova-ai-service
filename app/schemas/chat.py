@@ -16,6 +16,15 @@ class ChatFullRequest(BaseModel):
     messages: List[Message]
     system_prompt: Optional[str] = None
 
+class ChatFullResponseUsage(BaseModel):
+    input_tokens: int
+    output_tokens: int
+    total_tokens: int
+
+class ChatFullResponse(BaseModel):
+    content: str
+    usage: ChatFullResponseUsage    
+
 class TokenCountRequest(BaseModel):
     """Request for token counting."""
     text: str
