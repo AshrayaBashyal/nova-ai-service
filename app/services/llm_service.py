@@ -33,11 +33,11 @@ class GeminiService:
     
 
     async def chat_stream(
-        self,
-        messages: list,
-        system_prompt: Optional[str] = None,
-        include_usage: bool = True
-    ) -> AsyncGenerator[str, None]:
+            self,
+            messages: list,
+            system_prompt: Optional[str] = None,
+            include_usage: bool = True
+        ) -> AsyncGenerator[str, None]:
         """Stream response tokens and yield token usage at the end in unified JSON format."""
         loop = asyncio.get_event_loop()
         output_text = ""
@@ -51,12 +51,8 @@ class GeminiService:
         if system_prompt:
             gemini_messages.insert(0, {"role": "user", "parts": [f"System: {system_prompt}"]})
 
-        # Count input tokens (including system_prompt)
-        input_text = ""
-        if system_prompt:
-            input_text += system_prompt + " "
-        input_text += " ".join([msg.content for msg in messages])
-
+        # Count input tokens
+        input_text = " ".join([msg.content for msg in messages])
         try:
             input_tokens = await loop.run_in_executor(_executor, lambda: self.model.count_tokens(input_text).total_tokens)
         except:
@@ -71,12 +67,8 @@ class GeminiService:
             for chunk in response:
                 if chunk.text:
                     output_text += chunk.text
-                    # Stream word-by-word
                     for word in chunk.text.split(" "):
-                        data = {
-                            "type": "chunk",
-                            "text": word + " "
-                        }
+                        data = {"type": "chunk", "text": word + " "}
                         yield json.dumps(data) + "\n"
 
         except Exception as e:
@@ -98,7 +90,7 @@ class GeminiService:
                     }
                 }
                 yield json.dumps(summary) + "\n"
-    
+
 
     async def chat_full(
         self, 
