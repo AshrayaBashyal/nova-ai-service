@@ -10,6 +10,7 @@ class ChatStreamRequest(BaseModel):
     """Request for streaming endpoint."""
     messages: List[Message]
     system_prompt: Optional[str] = None
+    include_usage: Optional[bool] = True
 
 class ChatFullRequest(BaseModel):
     """Request for full response endpoint."""

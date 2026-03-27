@@ -8,34 +8,22 @@ from app.schemas.chat import (
     TokenCountRequest, TokenCountResponse, ChatFullResponse
 )
 
+
 router = APIRouter()
 gemini = GeminiService()
 
+
 @router.post("/v1/chat/stream")
 async def chat_stream(req: ChatStreamRequest):
-    """
-    Stream tokens from Gemini in real-time.
-    
-    Example:
-        curl -N -X POST http://localhost:8000/api/v1/chat/stream \
-          -H "Content-Type: application/json" \
-          -d '{
-            "messages": [{"role": "user", "content": "Hello"}],
-            "system_prompt": "You are helpful."
-          }'
-    """
-    async def token_generator():
-        """Yield tokens as they arrive."""
-        try:
-            async for token in gemini.stream_chat(
-                req.messages,
-                system_prompt=req.system_prompt
-            ):
-                yield token
-        except Exception as e:
-            yield f"\n[ERROR] {str(e)}"
-    
-    return StreamingResponse(token_generator(), media_type="text/event-stream")
+    """Stream chat from Gemini with optional token usage at the end."""
+    return StreamingResponse(
+        gemini.stream_chat_with_usage(
+            req.messages, 
+            system_prompt=req.system_prompt,
+            include_usage=req.include_usage
+        ),
+        media_type="text/event-stream"
+    )
 
 
 @router.post("/v1/chat/full", response_model=ChatFullResponse)

@@ -32,57 +32,61 @@ class GeminiService:
         )
     
 
-    async def stream_chat(
-        self, 
-        messages: list,
-        system_prompt: Optional[str] = None
-    ) -> AsyncGenerator[str, None]:
-        """
-        Stream tokens from Gemini one-by-one.
-        
-        Args:
-            messages: List of {"role": "user"/"model", "content": "..."}.
-                      Gemini uses "model" instead of "assistant".
-            system_prompt: Optional system instruction.
-        
-        Yields:
-            Text chunks as they arrive from Gemini.
-        """
-        loop = asyncio.get_event_loop()
-        
-        try:
-            # Convert message format if needed
+    async def chat_stream(
+            self,
+            messages: list,
+            system_prompt: Optional[str] = None,
+            include_usage: bool = True
+        ) -> AsyncGenerator[str, None]:
+            """Stream response tokens and yield token usage at the end."""
+            loop = asyncio.get_event_loop()
+            output_text = ""
+
+            # Prepare messages for Gemini
             gemini_messages = []
             for msg in messages:
-                role = "model" if msg.role == "assistant" else msg.role 
-                gemini_messages.append({
-                    "role": role,
-                    "parts": [msg.content]
-                })
-            
-            # System prompt goes in generation config or as first user message
+                role = "model" if msg.role == "assistant" else msg.role
+                gemini_messages.append({"role": role, "parts": [msg.content]})
+
             if system_prompt:
-                gemini_messages.insert(0, {
-                    "role": "user",
-                    "parts": [f"System: {system_prompt}"]
-                })
-            
-            # Run blocking Gemini call in thread pool
-            response = await loop.run_in_executor(
-                _executor,
-                lambda: self.model.generate_content(
-                    gemini_messages,
-                    stream=True
+                gemini_messages.insert(0, {"role": "user", "parts": [f"System: {system_prompt}"]})
+
+            # Count input tokens
+            input_text = " ".join([msg.content for msg in messages])
+            try:
+                input_tokens = await loop.run_in_executor(_executor, lambda: self.model.count_tokens(input_text).total_tokens)
+            except:
+                input_tokens = len(input_text) // 4  # rough fallback
+
+            try:
+                response = await loop.run_in_executor(
+                    _executor,
+                    lambda: self.model.generate_content(gemini_messages, stream=True)
                 )
-            )
-            
-            # Stream tokens from response
-            for chunk in response:
-                if chunk.text:
-                    yield chunk.text
-        
-        except Exception as e:
-            yield f"\n[ERROR] {type(e).__name__}: {str(e)}"
+
+                for chunk in response:
+                    if chunk.text:
+                        output_text += chunk.text
+                        yield chunk.text
+
+            except Exception as e:
+                yield f"\n[ERROR] {type(e).__name__}: {str(e)}"
+
+            finally:
+                if include_usage:
+                    try:
+                        output_tokens = await loop.run_in_executor(_executor, lambda: self.model.count_tokens(output_text).total_tokens)
+                    except:
+                        output_tokens = len(output_text) // 4
+                    total_tokens = input_tokens + output_tokens
+                    import json
+                    summary = {
+                        "type": "token_summary",
+                        "input_tokens": input_tokens,
+                        "output_tokens": output_tokens,
+                        "total_tokens": total_tokens
+                    }
+                    yield "\n" + json.dumps(summary)
     
 
     async def chat_full(
@@ -110,7 +114,7 @@ class GeminiService:
                     "parts": [f"System: {system_prompt}"]
                 })
             
-            # ✅ Build prompt text
+            # Build prompt text
             prompt_text = " ".join([msg.content for msg in messages])
             if system_prompt:
                 prompt_text = system_prompt + " " + prompt_text
