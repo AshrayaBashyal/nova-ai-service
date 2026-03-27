@@ -17,7 +17,7 @@ gemini = GeminiService()
 async def chat_stream(req: ChatStreamRequest):
     """Stream chat from Gemini with optional token usage at the end."""
     return StreamingResponse(
-        gemini.stream_chat_with_usage(
+        gemini.chat_stream(
             req.messages, 
             system_prompt=req.system_prompt,
             include_usage=req.include_usage

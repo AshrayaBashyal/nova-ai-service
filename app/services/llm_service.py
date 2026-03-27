@@ -4,7 +4,7 @@ from typing import AsyncGenerator, Optional
 import google.generativeai as genai
 from concurrent.futures import ThreadPoolExecutor
 from dotenv import load_dotenv
-
+import json
 
 load_dotenv()
 
@@ -33,60 +33,71 @@ class GeminiService:
     
 
     async def chat_stream(
-            self,
-            messages: list,
-            system_prompt: Optional[str] = None,
-            include_usage: bool = True
-        ) -> AsyncGenerator[str, None]:
-            """Stream response tokens and yield token usage at the end."""
-            loop = asyncio.get_event_loop()
-            output_text = ""
+        self,
+        messages: list,
+        system_prompt: Optional[str] = None,
+        include_usage: bool = True
+    ) -> AsyncGenerator[str, None]:
+        """Stream response tokens and yield token usage at the end in unified JSON format."""
+        loop = asyncio.get_event_loop()
+        output_text = ""
 
-            # Prepare messages for Gemini
-            gemini_messages = []
-            for msg in messages:
-                role = "model" if msg.role == "assistant" else msg.role
-                gemini_messages.append({"role": role, "parts": [msg.content]})
+        # Prepare messages for Gemini
+        gemini_messages = []
+        for msg in messages:
+            role = "model" if msg.role == "assistant" else msg.role
+            gemini_messages.append({"role": role, "parts": [msg.content]})
 
-            if system_prompt:
-                gemini_messages.insert(0, {"role": "user", "parts": [f"System: {system_prompt}"]})
+        if system_prompt:
+            gemini_messages.insert(0, {"role": "user", "parts": [f"System: {system_prompt}"]})
 
-            # Count input tokens
-            input_text = " ".join([msg.content for msg in messages])
-            try:
-                input_tokens = await loop.run_in_executor(_executor, lambda: self.model.count_tokens(input_text).total_tokens)
-            except:
-                input_tokens = len(input_text) // 4  # rough fallback
+        # Count input tokens (including system_prompt)
+        input_text = ""
+        if system_prompt:
+            input_text += system_prompt + " "
+        input_text += " ".join([msg.content for msg in messages])
 
-            try:
-                response = await loop.run_in_executor(
-                    _executor,
-                    lambda: self.model.generate_content(gemini_messages, stream=True)
-                )
+        try:
+            input_tokens = await loop.run_in_executor(_executor, lambda: self.model.count_tokens(input_text).total_tokens)
+        except:
+            input_tokens = len(input_text) // 4  # rough fallback
 
-                for chunk in response:
-                    if chunk.text:
-                        output_text += chunk.text
-                        yield chunk.text
+        try:
+            response = await loop.run_in_executor(
+                _executor,
+                lambda: self.model.generate_content(gemini_messages, stream=True)
+            )
 
-            except Exception as e:
-                yield f"\n[ERROR] {type(e).__name__}: {str(e)}"
+            for chunk in response:
+                if chunk.text:
+                    output_text += chunk.text
+                    # Stream word-by-word
+                    for word in chunk.text.split(" "):
+                        data = {
+                            "type": "chunk",
+                            "text": word + " "
+                        }
+                        yield json.dumps(data) + "\n"
 
-            finally:
-                if include_usage:
-                    try:
-                        output_tokens = await loop.run_in_executor(_executor, lambda: self.model.count_tokens(output_text).total_tokens)
-                    except:
-                        output_tokens = len(output_text) // 4
-                    total_tokens = input_tokens + output_tokens
-                    import json
-                    summary = {
-                        "type": "token_summary",
+        except Exception as e:
+            yield json.dumps({"type": "error", "message": str(e)}) + "\n"
+
+        finally:
+            if include_usage:
+                try:
+                    output_tokens = await loop.run_in_executor(_executor, lambda: self.model.count_tokens(output_text).total_tokens)
+                except:
+                    output_tokens = len(output_text) // 4
+                total_tokens = input_tokens + output_tokens
+                summary = {
+                    "type": "usage",
+                    "usage": {
                         "input_tokens": input_tokens,
                         "output_tokens": output_tokens,
                         "total_tokens": total_tokens
                     }
-                    yield "\n" + json.dumps(summary)
+                }
+                yield json.dumps(summary) + "\n"
     
 
     async def chat_full(
