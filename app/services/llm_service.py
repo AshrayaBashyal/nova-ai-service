@@ -85,66 +85,66 @@ class GeminiService:
             yield f"\n[ERROR] {type(e).__name__}: {str(e)}"
     
 
-async def chat_full(
-    self, 
-    messages: list,
-    system_prompt: Optional[str] = None
-) -> dict:
-    """
-    Get full response (non-streaming) with token usage.
-    """
-    loop = asyncio.get_event_loop()
-    
-    try:
-        gemini_messages = []
-        for msg in messages:
-            role = "model" if msg.role == "assistant" else msg.role
-            gemini_messages.append({
-                "role": role,
-                "parts": [msg.content]
-            })
+    async def chat_full(
+        self, 
+        messages: list,
+        system_prompt: Optional[str] = None
+    ) -> dict:
+        """
+        Get full response (non-streaming) with token usage.
+        """
+        loop = asyncio.get_event_loop()
         
-        if system_prompt:
-            gemini_messages.insert(0, {
-                "role": "user",
-                "parts": [f"System: {system_prompt}"]
-            })
-        
-        # ✅ Build prompt text
-        prompt_text = " ".join([msg.content for msg in messages])
-        if system_prompt:
-            prompt_text = system_prompt + " " + prompt_text
-        
-        # ✅ Count input tokens
-        input_tokens = await self.count_tokens(prompt_text)
-        
-        # ✅ Generate response
-        response = await loop.run_in_executor(
-            _executor,
-            lambda: self.model.generate_content(gemini_messages)
-        )
-        
-        # ✅ Count output tokens
-        output_tokens = await self.count_tokens(response.text)
-        
-        return {
-            "content": response.text,
-            "usage": {
-                "input_tokens": input_tokens,
-                "output_tokens": output_tokens,
-                "total_tokens": input_tokens + output_tokens
+        try:
+            gemini_messages = []
+            for msg in messages:
+                role = "model" if msg.role == "assistant" else msg.role
+                gemini_messages.append({
+                    "role": role,
+                    "parts": [msg.content]
+                })
+            
+            if system_prompt:
+                gemini_messages.insert(0, {
+                    "role": "user",
+                    "parts": [f"System: {system_prompt}"]
+                })
+            
+            # ✅ Build prompt text
+            prompt_text = " ".join([msg.content for msg in messages])
+            if system_prompt:
+                prompt_text = system_prompt + " " + prompt_text
+            
+            # Count input tokens
+            input_tokens = await self.count_tokens(prompt_text)
+            
+            # Generate response
+            response = await loop.run_in_executor(
+                _executor,
+                lambda: self.model.generate_content(gemini_messages)
+            )
+            
+            # Count output tokens
+            output_tokens = await self.count_tokens(response.text)
+            
+            return {
+                "content": response.text,
+                "usage": {
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "total_tokens": input_tokens + output_tokens
+                }
             }
-        }
-    
-    except Exception as e:
-        return {
-            "content": f"[ERROR] {type(e).__name__}: {str(e)}",
-            "usage": {
-                "input_tokens": 0,
-                "output_tokens": 0,
-                "total_tokens": 0
+        
+        except Exception as e:
+            return {
+                "content": f"[ERROR] {type(e).__name__}: {str(e)}",
+                "usage": {
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                    "total_tokens": 0
+                }
             }
-        }
     
     
     async def count_tokens(self, text: str) -> int:
