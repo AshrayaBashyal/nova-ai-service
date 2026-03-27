@@ -37,6 +37,7 @@ async def chat_stream(req: ChatStreamRequest):
     
     return StreamingResponse(token_generator(), media_type="text/event-stream")
 
+
 @router.post("/v1/chat/full")
 async def chat_full(req: ChatFullRequest):
     """
@@ -52,6 +53,7 @@ async def chat_full(req: ChatFullRequest):
         return {"content": response}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.post("/v1/tokens/count")
 async def count_tokens(req: TokenCountRequest) -> TokenCountResponse:
@@ -69,6 +71,7 @@ async def count_tokens(req: TokenCountRequest) -> TokenCountResponse:
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.get("/health")
 async def health():

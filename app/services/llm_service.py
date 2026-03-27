@@ -3,6 +3,10 @@ import asyncio
 from typing import AsyncGenerator, Optional
 import google.generativeai as genai
 from concurrent.futures import ThreadPoolExecutor
+from dotenv import load_dotenv
+
+
+load_dotenv()
 
 _executor = ThreadPoolExecutor(max_workers=5)
 
@@ -19,7 +23,7 @@ class GeminiService:
         
         genai.configure(api_key=api_key)
         self.model = genai.GenerativeModel(
-            model_name="gemini-2.0-flash",
+            model_name="gemini-2.5-flash",
             generation_config=genai.GenerationConfig(
                 temperature=0.7,
                 max_output_tokens=1000,
@@ -27,6 +31,7 @@ class GeminiService:
             )
         )
     
+
     async def stream_chat(
         self, 
         messages: list,
@@ -49,10 +54,10 @@ class GeminiService:
             # Convert message format if needed
             gemini_messages = []
             for msg in messages:
-                role = "model" if msg.get("role") == "assistant" else msg.get("role", "user")
+                role = "model" if msg.role == "assistant" else msg.role 
                 gemini_messages.append({
                     "role": role,
-                    "parts": [msg.get("content", "")]
+                    "parts": [msg.content]
                 })
             
             # System prompt goes in generation config or as first user message
@@ -79,51 +84,72 @@ class GeminiService:
         except Exception as e:
             yield f"\n[ERROR] {type(e).__name__}: {str(e)}"
     
-    async def chat_full(
-        self, 
-        messages: list,
-        system_prompt: Optional[str] = None
-    ) -> str:
-        """
-        Get full response (non-streaming).
+
+async def chat_full(
+    self, 
+    messages: list,
+    system_prompt: Optional[str] = None
+) -> dict:
+    """
+    Get full response (non-streaming) with token usage.
+    """
+    loop = asyncio.get_event_loop()
+    
+    try:
+        gemini_messages = []
+        for msg in messages:
+            role = "model" if msg.role == "assistant" else msg.role
+            gemini_messages.append({
+                "role": role,
+                "parts": [msg.content]
+            })
         
-        Args:
-            messages: List of {"role": "user"/"model", "content": "..."}.
-            system_prompt: Optional system instruction.
+        if system_prompt:
+            gemini_messages.insert(0, {
+                "role": "user",
+                "parts": [f"System: {system_prompt}"]
+            })
         
-        Returns:
-            Complete text response.
-        """
-        loop = asyncio.get_event_loop()
+        # ✅ Build prompt text
+        prompt_text = " ".join([msg.content for msg in messages])
+        if system_prompt:
+            prompt_text = system_prompt + " " + prompt_text
         
-        try:
-            gemini_messages = []
-            for msg in messages:
-                role = "model" if msg.get("role") == "assistant" else msg.get("role", "user")
-                gemini_messages.append({
-                    "role": role,
-                    "parts": [msg.get("content", "")]
-                })
-            
-            if system_prompt:
-                gemini_messages.insert(0, {
-                    "role": "user",
-                    "parts": [f"System: {system_prompt}"]
-                })
-            
-            response = await loop.run_in_executor(
-                _executor,
-                lambda: self.model.generate_content(gemini_messages)
-            )
-            
-            return response.text
+        # ✅ Count input tokens
+        input_tokens = await self.count_tokens(prompt_text)
         
-        except Exception as e:
-            return f"[ERROR] {type(e).__name__}: {str(e)}"
+        # ✅ Generate response
+        response = await loop.run_in_executor(
+            _executor,
+            lambda: self.model.generate_content(gemini_messages)
+        )
+        
+        # ✅ Count output tokens
+        output_tokens = await self.count_tokens(response.text)
+        
+        return {
+            "content": response.text,
+            "usage": {
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "total_tokens": input_tokens + output_tokens
+            }
+        }
+    
+    except Exception as e:
+        return {
+            "content": f"[ERROR] {type(e).__name__}: {str(e)}",
+            "usage": {
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "total_tokens": 0
+            }
+        }
+    
     
     async def count_tokens(self, text: str) -> int:
         """
-        Count tokens in text using Gemini's tokenizer.
+        Count tokens in !!TEST!! using Gemini's tokenizer.
         Free and useful for context management.
         """
         loop = asyncio.get_event_loop()
