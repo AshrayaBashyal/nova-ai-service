@@ -1,65 +1,50 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse
-import asyncio
+from app.schemas.chat import ChatRequest, ChatFullResponse, TokenCountRequest, TokenCountResponse
+from app.services.gemini_service import GeminiService
 
-from app.services.llm_service import GeminiService
-from app.schemas.chat import (
-    ChatStreamRequest, ChatFullRequest, 
-    TokenCountRequest, TokenCountResponse, ChatFullResponse
-)
-
-
+# Create the router instance
 router = APIRouter()
-gemini = GeminiService()
 
+# Dependency Injection: This ensures we have a service instance ready for each request.
+def get_gemini_service():
+    return GeminiService()
 
 @router.post("/v1/chat/stream")
-async def chat_stream(req: ChatStreamRequest):
-    """Stream chat from Gemini with optional token usage at the end."""
-    return StreamingResponse(
-        gemini.chat_stream(
-            req.messages, 
-            system_prompt=req.system_prompt,
-            include_usage=req.include_usage
-        ),
-        media_type="text/event-stream"
-    )
-
-
-@router.post("/v1/chat/full", response_model=ChatFullResponse)
-async def chat_full(req: ChatFullRequest):
+async def chat_stream(
+    req: ChatRequest, 
+    service: GeminiService = Depends(get_gemini_service)
+):
     """
-    Get complete response (non-streaming) with token usage.
+    SERVER-SENT EVENTS (SSE) ENDPOINT
+    Streams Gemini's response chunk-by-chunk.
     """
     try:
-        response = await gemini.chat_full(
-            req.messages,
-            system_prompt=req.system_prompt
+        # We return a StreamingResponse which FastAPI handles efficiently.
+        # media_type="text/event-stream" tells the browser to expect a stream.
+        return StreamingResponse(
+            service.chat_stream(
+                messages=req.messages,
+                system_prompt=req.system_prompt,
+                temperature=req.temperature
+            ),
+            media_type="text/event-stream"
         )
-        return response  
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        # Standard FastAPI error handling
+        raise HTTPException(status_code=500, detail=f"Streaming failed: {str(e)}")
 
-
-@router.post("/v1/tokens/count")
-async def count_tokens(req: TokenCountRequest) -> TokenCountResponse:
+@router.post("/v1/tokens/count", response_model=TokenCountResponse)
+async def count_tokens(
+    req: TokenCountRequest, 
+    service: GeminiService = Depends(get_gemini_service)
+):
     """
-    Count tokens in text.
-    
-    Useful for managing context length in Phase 2/3.
-    Gemini's tokenizer is accurate and free to use.
+    UTILITY ENDPOINT
+    Allows the frontend to check if a long prompt will fit in the context window.
     """
     try:
-        count = await gemini.count_tokens(req.text)
-        return TokenCountResponse(
-            tokens=count,
-            text_length=len(req.text)
-        )
+        count = await service.count_tokens(req.text)
+        return TokenCountResponse(tokens=count)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/health")
-async def health():
-    """Liveness check."""
-    return {"status": "ok", "model": "gemini-2.0-flash"}
