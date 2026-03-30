@@ -1,23 +1,33 @@
-import time
-import logging
-from starlette.middleware.base import BaseHTTPMiddleware
+import os
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from pathlib import Path
 
+# Determine the base directory of the project
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
-logger = logging.getLogger(__name__)
+class Settings(BaseSettings):
+    """
+    Application settings using Pydantic for automatic validation.
+    If a required variable is missing from .env, the app will fail 
+    immediately on startup with a clear error.
+    """
+    # API Keys
+    GEMINI_API_KEY: str
+    
+    # Model Settings
+    GEMINI_MODEL: str = "gemini-2.0-flash"
+    TEMPERATURE: float = 0.7
+    MAX_OUTPUT_TOKENS: int = 2048
+    
+    # Fast API Settings
+    PROJECT_NAME: str = "Gemini-FastAPI-Production"
+    
+    # Tell Pydantic to read from the .env file
+    model_config = SettingsConfigDict(
+        env_file=str(BASE_DIR / ".env"),
+        env_file_encoding="utf-8",
+        extra="ignore" # Ignore extra env vars not defined here
+    )
 
-
-class LoggingMiddleware(BaseHTTPMiddleware):
-    """Log request path, status, and latency (ms)."""
-    async def dispatch(self, request, call_next):
-        start = time.time()
-        response = await call_next(request)
-        elapsed_ms = (time.time() - start) * 1000
-        
-        logger.info(
-            f"{request.method} {request.url.path} -> {response.status_code} ({elapsed_ms:.1f}ms)"
-        )
-        return response
+# Create a single instance to be imported elsewhere (Singleton pattern)
+settings = Settings()
